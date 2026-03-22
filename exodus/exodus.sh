@@ -43,20 +43,44 @@ manual_partition() {
 # Function: Format the partitions
 # ----------------------------
 format_partitions() {
-    echo "Formatting EFI partition as FAT32..."
-    mkfs.fat -F32 "$EFI_PART"
+    echo "Checking existing filesystems..."
 
-    echo "Formatting root partition as ext4..."
-    mkfs.ext4 "$ROOT_PART"
+    # -------- EFI --------
+    EFI_FS=$(blkid -o value -s TYPE "$EFI_PART")
+    if [[ "$EFI_FS" == "vfat" ]]; then
+        echo "EFI partition already formatted as FAT32."
+    else
+        read -rp "EFI is not FAT32. Format it? (y/n): " ans
+        [[ "$ans" == "y" ]] && mkfs.fat -F32 "$EFI_PART"
+    fi
 
-    echo "Setting up swap partition..."
-    mkswap "$SWAP_PART"
-    swapon "$SWAP_PART"
+    # -------- ROOT --------
+    ROOT_FS=$(blkid -o value -s TYPE "$ROOT_PART")
+    if [[ "$ROOT_FS" == "ext4" ]]; then
+        echo "Root partition already formatted as ext4."
+    else
+        read -rp "Root is not ext4. Format it? (y/n): " ans
+        [[ "$ans" == "y" ]] && mkfs.ext4 "$ROOT_PART"
+    fi
 
-    # Add swap to fstab for persistence
-    echo "$SWAP_PART none swap sw 0 0" >> /mnt/etc/fstab
+    # -------- SWAP --------
+    SWAP_FS=$(blkid -o value -s TYPE "$SWAP_PART")
+
+    if [[ "$SWAP_FS" == "swap" ]]; then
+        echo "Swap partition already initialized."
+    else
+        read -rp "Swap not initialized. Format it? (y/n): " ans
+        [[ "$ans" == "y" ]] && mkswap "$SWAP_PART"
+    fi
+
+    # Enable swap if not already active
+    if ! swapon --show | grep -q "$SWAP_PART"; then
+        echo "Enabling swap..."
+        swapon "$SWAP_PART"
+    else
+        echo "Swap already active."
+    fi
 }
-
 # ----------------------------
 # Function: Mount the partitions
 # ----------------------------
