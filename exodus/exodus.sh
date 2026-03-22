@@ -91,7 +91,8 @@ copy_mirrorlist() {
 # ----------------------------
 sync_clock() {
     echo "Starting NTP to sync system clock..."
-    rc-service ntpd start
+    s6-rc -u change openntpd
+
 }
 
 # ----------------------------
