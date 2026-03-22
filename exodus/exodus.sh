@@ -5,6 +5,23 @@ set -e
 # ----------------------------
 # Function: Ask user to manually partition the disk
 # ----------------------------
+
+run_in_chroot() {
+    artix-chroot /mnt /bin/bash -c "$1"
+}
+
+check_internet() {
+    echo "Checking internet connection..."
+
+    if ping -c 3 artixlinux.org >/dev/null 2>&1; then
+        echo "Internet is working."
+    else
+        echo "No internet connection! Please connect before continuing."
+        exit 1
+    fi
+}
+
+
 manual_partition() {
     echo "Please manually partition your disk using cfdisk, parted, or gdisk."
     echo "After finishing, press 'y' to continue or 'n' to abort."
@@ -60,10 +77,64 @@ sync_clock() {
 # ----------------------------
 bootstrap_base() {
     echo "Bootstrapping base system..."
-    basestrap /mnt base base-devel openrc elogind-openrc
+    basestrap /mnt base base-devel openrc elogind-openrc linux-zen 
     echo "Generating fstab..."
     fstabgen -U /mnt >> /mnt/etc/fstab
 }
+
+set_timezone() {
+    echo "Setting timezone to Europe/Skopje..."
+
+    run_in_chroot "ln -sf /usr/share/zoneinfo/Europe/Skopje /etc/localtime"
+    run_in_chroot "hwclock --systohc"
+
+    echo "Timezone configured."
+}
+
+set_locale() {
+    echo "Configuring locale..."
+
+    # Enable locale
+    sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /mnt/etc/locale.gen
+
+    # Generate locales
+    run_in_chroot "locale-gen"
+
+    # Set system-wide locale
+    echo "LANG=en_US.UTF-8" > /mnt/etc/locale.conf
+
+    echo "Locale configured system-wide."
+}
+
+
+set_hostname() {
+    echo "Setting hostname..."
+
+    # Set hostname
+    echo "leviticus" > /mnt/etc/hostname
+
+    # Configure hosts file
+    cat > /mnt/etc/hosts <<EOF
+127.0.0.1   localhost
+::1         localhost
+127.0.1.1   leviticus.localdomain leviticus
+EOF
+
+    echo "Hostname configured as leviticus."
+}
+
+set_dns() {
+    echo "Configuring DNS..."
+
+    cat > /mnt/etc/resolv.conf <<EOF
+nameserver 1.1.1.1   # Cloudflare
+nameserver 8.8.8.8   # Google
+EOF
+
+    echo "DNS configured."
+}
+
+
 
 # ----------------------------
 # Main script execution
