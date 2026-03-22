@@ -134,7 +134,23 @@ EOF
     echo "DNS configured."
 }
 
+copy_mirrorlist() {
+    local source_file="$PWD/mirrorlist"   # your mirrorlist in the scripts folder
+    local target_file="/mnt/etc/pacman.d/mirrorlist"
 
+    if [[ ! -f "$source_file" ]]; then
+        echo "Mirrorlist file not found: $source_file"
+        return 1
+    fi
+
+    # Make sure target directory exists
+    mkdir -p "$(dirname "$target_file")"
+
+    # Copy mirrorlist into chroot
+    cp "$source_file" "$target_file"
+
+    echo "Mirrorlist copied to $target_file"
+}
 
 # ----------------------------
 # Main script execution
