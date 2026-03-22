@@ -1,18 +1,18 @@
 #!/bin/bash
-
 set -e
 
 # ----------------------------
-# Function: Ask user to manually partition the disk
+# Function: Run command inside chroot
 # ----------------------------
-
 run_in_chroot() {
     artix-chroot /mnt /bin/bash -c "$1"
 }
 
+# ----------------------------
+# Function: Check internet connection
+# ----------------------------
 check_internet() {
     echo "Checking internet connection..."
-
     if ping -c 3 artixlinux.org >/dev/null 2>&1; then
         echo "Internet is working."
     else
@@ -21,7 +21,9 @@ check_internet() {
     fi
 }
 
-
+# ----------------------------
+# Function: Manual partition prompt
+# ----------------------------
 manual_partition() {
     echo "Please manually partition your disk using cfdisk, parted, or gdisk."
     echo "After finishing, press 'y' to continue or 'n' to abort."
@@ -50,6 +52,9 @@ format_partitions() {
     echo "Setting up swap partition..."
     mkswap "$SWAP_PART"
     swapon "$SWAP_PART"
+
+    # Add swap to fstab for persistence
+    echo "$SWAP_PART none swap sw 0 0" >> /mnt/etc/fstab
 }
 
 # ----------------------------
@@ -65,7 +70,24 @@ mount_partitions() {
 }
 
 # ----------------------------
-# Function: Synchronize system clock (OpenRC live)
+# Function: Copy mirrorlist
+# ----------------------------
+copy_mirrorlist() {
+    local source_file="$PWD/mirrorlist"   # your mirrorlist in scripts folder
+    local target_file="/mnt/etc/pacman.d/mirrorlist"
+
+    if [[ ! -f "$source_file" ]]; then
+        echo "Mirrorlist file not found: $source_file"
+        exit 1
+    fi
+
+    mkdir -p "$(dirname "$target_file")"
+    cp "$source_file" "$target_file"
+    echo "Mirrorlist copied to $target_file"
+}
+
+# ----------------------------
+# Function: Synchronize system clock
 # ----------------------------
 sync_clock() {
     echo "Starting NTP to sync system clock..."
@@ -77,79 +99,56 @@ sync_clock() {
 # ----------------------------
 bootstrap_base() {
     echo "Bootstrapping base system..."
-    basestrap /mnt base base-devel openrc elogind-openrc linux-zen 
+    basestrap /mnt base base-devel openrc elogind-openrc linux-zen
     echo "Generating fstab..."
     fstabgen -U /mnt >> /mnt/etc/fstab
 }
 
+# ----------------------------
+# Function: Set timezone
+# ----------------------------
 set_timezone() {
     echo "Setting timezone to Europe/Skopje..."
-
     run_in_chroot "ln -sf /usr/share/zoneinfo/Europe/Skopje /etc/localtime"
     run_in_chroot "hwclock --systohc"
-
     echo "Timezone configured."
 }
 
+# ----------------------------
+# Function: Set locale
+# ----------------------------
 set_locale() {
     echo "Configuring locale..."
-
-    # Enable locale
     sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /mnt/etc/locale.gen
-
-    # Generate locales
     run_in_chroot "locale-gen"
-
-    # Set system-wide locale
     echo "LANG=en_US.UTF-8" > /mnt/etc/locale.conf
-
     echo "Locale configured system-wide."
 }
 
-
+# ----------------------------
+# Function: Set hostname
+# ----------------------------
 set_hostname() {
     echo "Setting hostname..."
-
-    # Set hostname
     echo "leviticus" > /mnt/etc/hostname
-
-    # Configure hosts file
     cat > /mnt/etc/hosts <<EOF
 127.0.0.1   localhost
 ::1         localhost
 127.0.1.1   leviticus.localdomain leviticus
 EOF
-
-    echo "Hostname configured as leviticus."
+    echo "Hostname configured."
 }
 
+# ----------------------------
+# Function: Set DNS
+# ----------------------------
 set_dns() {
     echo "Configuring DNS..."
-
     cat > /mnt/etc/resolv.conf <<EOF
 nameserver 1.1.1.1   # Cloudflare
 nameserver 8.8.8.8   # Google
 EOF
-
     echo "DNS configured."
-}
-
-copy_mirrorlist() {
-    local source_file="$PWD/mirrorlist"   # your mirrorlist in the scripts folder
-    local target_file="/mnt/etc/pacman.d/mirrorlist"
-
-    if [[ ! -f "$source_file" ]]; then
-        echo "Mirrorlist file not found: $source_file"
-        return 1
-    fi
-
-    # Make sure target directory exists
-    mkdir -p "$(dirname "$target_file")"
-
-    # Copy mirrorlist into chroot
-    cp "$source_file" "$target_file"
-
-    echo "Mirrorlist copied to $target_file"
 }
 
 # ----------------------------
@@ -157,10 +156,14 @@ copy_mirrorlist() {
 # ----------------------------
 echo "Starting Artix installation..."
 
+check_internet
 manual_partition
 format_partitions
 mount_partitions
+copy_mirrorlist
 sync_clock
 bootstrap_base
-
-echo "Base installation complete!"
+set_timezone
+set_locale
+set_hostname
+set_dns
